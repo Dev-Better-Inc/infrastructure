@@ -6,46 +6,24 @@ Shared infra primitives used across Dev-Better-Inc projects.
 
 ```
 infrastructure/
-├── actions/                  # composite + JS GitHub Actions
-│   └── vault-env/            # resolve .env from .env.tpl via HashiCorp Vault
-├── .github/
-│   └── workflows/            # reusable workflows
-│       └── deploy-cf-spa.yml # build + Vault env + S3 sync + CloudFront invalidation
-└── tofu-modules/             # shared OpenTofu modules (placeholder for now)
+├── actions/                  # GitHub Actions
+│   └── vault-env/            # resolve .env from .env.tpl or vault path via HashiCorp Vault
+├── vault/                    # Vault bootstrap
+│   └── setup.sh
+└── tofu-modules/             # shared OpenTofu modules (placeholder)
 ```
 
-## Using from a downstream repo
-
-### Reusable workflow
-
-```yaml
-jobs:
-  deploy:
-    uses: Dev-Better-Inc/infrastructure/.github/workflows/deploy-cf-spa.yml@main
-    with:
-      environment: staging
-      site_url: https://staging.example.com
-      aws_role_arn: arn:aws:iam::123456789012:role/example-staging-deploy
-      s3_bucket: staging.example.com
-      cloudfront_distribution_id: E1ABCXYZ
-    secrets:
-      vault_url:      ${{ secrets.VAULT_URL }}
-      vault_username: ${{ secrets.VAULT_USERNAME }}
-      vault_password: ${{ secrets.VAULT_PASSWORD }}
-```
-
-The downstream repo must contain `.env.<environment>.tpl` files (e.g. `.env.staging.tpl`, `.env.production.tpl`) — see [`actions/vault-env/README.md`](actions/vault-env/README.md) for the format.
-
-### Action only
+## Using the vault-env action
 
 ```yaml
 - uses: Dev-Better-Inc/infrastructure/actions/vault-env@main
   with:
-    vault_url:      ${{ secrets.VAULT_URL }}
-    vault_username: ${{ secrets.VAULT_USERNAME }}
-    vault_password: ${{ secrets.VAULT_PASSWORD }}
-    template_file:  .env.staging.tpl
+    vault_url: https://vault.example.com
+    vault_role: dev-better-deploy   # OIDC/JWT (default auth_method)
+    template_file: .env.staging.tpl
 ```
+
+See [`actions/vault-env/README.md`](actions/vault-env/README.md) for full input docs and the template format.
 
 ## Versioning
 
