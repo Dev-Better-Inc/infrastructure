@@ -60,6 +60,13 @@ inputs:
       Comma-separated allow-list of env keys to expose as GitHub Actions step
       outputs. Empty (default) = no outputs. Use '*' to expose every resolved key.
 
+  strict:
+    required: false
+    default: 'false'
+    description: |
+      If true, fail the step when any expected key is missing in Vault.
+      Default is to log a warning and write an empty value.
+
 runs:
   using: node24
   main: dist/index.js

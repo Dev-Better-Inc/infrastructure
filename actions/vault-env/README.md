@@ -24,7 +24,14 @@ Resolve a `.env` file from a committed `.env.tpl` mapping by reading values from
 
 - **`jwt` (default)** — exchanges the GitHub Actions OIDC token at `auth/jwt/login`. No long-lived secrets in GitHub. Requires `vault_role` and that Vault has the `jwt` auth method configured against GitHub's issuer.
 - **`userpass`** — classic username/password against `auth/userpass/login/<username>`. Long-lived; rotate manually.
-- **`token`** — supply an already-issued Vault token directly. Useful when another step/system has obtained one (or for local testing).
+- **`token`** — supply an already-issued Vault token. Intended for short-lived tokens minted by another step/system. **Do not** check in a long-lived token as a repo secret — that defeats the OIDC story; prefer `jwt` for any recurring deploy.
+
+## Security
+
+- Pass sensitive inputs (`vault_password`, `vault_token`) via `${{ secrets.X }}`, never `${{ vars.X }}` — GitHub only masks the former. The action additionally calls `core.setSecret()` on these inputs and on the resolved Vault token + OIDC JWT, so values stay masked in logs and outputs.
+- `vault_url` must be `https://` (or `http://localhost` for testing) — the action rejects any other scheme.
+- `output_file` is resolved against `GITHUB_WORKSPACE` and refuses to write outside it.
+- Use `expose_outputs` as a strict allow-list — every key in a Vault secret can otherwise leak as a (masked, but referenceable) output, which is risky if the workflow forwards outputs across jobs.
 
 ## Template format
 
