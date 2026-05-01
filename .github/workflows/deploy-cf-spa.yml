@@ -1,0 +1,119 @@
+name: Reusable — deploy CF/S3 SPA
+
+# Builds a Vite (or any) static SPA from the calling repo, populates .env from
+# Vault via .env.<env>.tpl, syncs to S3, invalidates the CloudFront distribution.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+        description: Logical env name; selects .env.<environment>.tpl by default.
+      site_url:
+        type: string
+        required: true
+      aws_role_arn:
+        type: string
+        required: true
+      s3_bucket:
+        type: string
+        required: true
+      cloudfront_distribution_id:
+        type: string
+        required: true
+      template_file:
+        type: string
+        required: false
+        default: ''
+        description: Override .env tpl path. Empty = .env.<environment>.tpl.
+      build_command:
+        type: string
+        required: false
+        default: npm run build
+      build_output_dir:
+        type: string
+        required: false
+        default: build
+      aws_region:
+        type: string
+        required: false
+        default: us-east-1
+      node_version:
+        type: string
+        required: false
+        default: lts/*
+      infrastructure_ref:
+        type: string
+        required: false
+        default: main
+        description: Ref of Dev-Better-Inc/infrastructure to use for the vault-env action.
+    secrets:
+      vault_url:
+        required: true
+      vault_username:
+        required: true
+      vault_password:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Dev-Better-Inc/infrastructure
+          ref: ${{ inputs.infrastructure_ref }}
+          path: .infrastructure
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Resolve .env from Vault
+        uses: ./.infrastructure/actions/vault-env
+        with:
+          vault_url: ${{ secrets.vault_url }}
+          vault_username: ${{ secrets.vault_username }}
+          vault_password: ${{ secrets.vault_password }}
+          template_file: ${{ inputs.template_file == '' && format('.env.{0}.tpl', inputs.environment) || inputs.template_file }}
+
+      - name: Build
+        run: ${{ inputs.build_command }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Sync hashed assets (immutable)
+        run: |
+          aws s3 sync ${{ inputs.build_output_dir }}/ s3://${{ inputs.s3_bucket }}/ \
+            --delete \
+            --exclude "*.html" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Sync HTML (no cache)
+        run: |
+          aws s3 sync ${{ inputs.build_output_dir }}/ s3://${{ inputs.s3_bucket }}/ \
+            --exclude "*" \
+            --include "*.html" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --content-type "text/html; charset=utf-8"
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ inputs.cloudfront_distribution_id }} \
+            --paths "/*"
+
+      - run: echo "Deployed ${{ inputs.environment }} → ${{ inputs.site_url }}" >> $GITHUB_STEP_SUMMARY

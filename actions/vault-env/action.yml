@@ -1,0 +1,54 @@
+name: Vault to .env
+description: Resolve a .env file from a committed .env.tpl mapping by reading values from HashiCorp Vault (KV v2).
+
+inputs:
+  vault_url:
+    required: true
+    description: Vault address, e.g. https://vault.example.com
+
+  auth_method:
+    required: false
+    default: jwt
+    description: One of jwt | userpass | token.
+
+  # JWT (default) — exchanges GitHub OIDC token at auth/jwt/login.
+  vault_role:
+    required: false
+    default: ''
+  vault_audience:
+    required: false
+    default: https://github.com/Dev-Better-Inc
+
+  # Userpass — auth/userpass/login/<username>.
+  vault_username:
+    required: false
+    default: ''
+  vault_password:
+    required: false
+    default: ''
+
+  # Token — use a pre-existing Vault token (e.g. issued by another step or fed in as a secret).
+  vault_token:
+    required: false
+    default: ''
+
+  template_file:
+    required: false
+    default: ''
+    description: |
+      Template path. Each line is `ENV_KEY=<mount>/<secret/path>/<vaultKey>`.
+      Mutually exclusive with `vault_path`. One of the two is required.
+  vault_path:
+    required: false
+    default: ''
+    description: |
+      Read every key from a single secret and write them all to the output file as-is.
+      Format: `<mount>/<secret/path>` (e.g. `projects/checkprod/staging/app`).
+      Mutually exclusive with `template_file`.
+  output_file:
+    required: false
+    default: .env
+
+runs:
+  using: node24
+  main: dist/index.js

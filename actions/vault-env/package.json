@@ -1,0 +1,27 @@
+{
+  "name": "@dev-better-inc/vault-env-action",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Resolve a .env file from a committed .env.tpl mapping via HashiCorp Vault.",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "ncc build src/index.ts -o dist --minify --license licenses.txt",
+    "lint": "tsc --noEmit",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "node-vault": "^0.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/node-vault": "^0.9.13",
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.6.3"
+  }
+}
