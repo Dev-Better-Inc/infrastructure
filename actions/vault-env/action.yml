@@ -48,6 +48,17 @@ inputs:
   output_file:
     required: false
     default: .env
+    description: |
+      Where to write the resolved key=value file. Set to empty string to skip
+      writing entirely (useful for deploy-only secrets that should never become
+      part of a frontend bundle).
+
+  expose_outputs:
+    required: false
+    default: ''
+    description: |
+      Comma-separated allow-list of env keys to expose as GitHub Actions step
+      outputs. Empty (default) = no outputs. Use '*' to expose every resolved key.
 
 runs:
   using: node24

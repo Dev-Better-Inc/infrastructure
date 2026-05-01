@@ -68,8 +68,32 @@ npm run build   # produces dist/index.js (committed bundle)
 
 The committed `dist/` is what GitHub Actions runs. CI should fail if `dist/` is out of date relative to `src/`.
 
+## Outputs
+
+By default the action exposes **no** step outputs — every resolved value lives in the written file (`.env` by default). Opt in with `expose_outputs`:
+
+```yaml
+- id: deploy_env
+  uses: Dev-Better-Inc/infrastructure/actions/vault-env@main
+  with:
+    vault_url: https://vault.example.com
+    vault_role: dev-better-deploy
+    vault_path: projects/checkprod/staging/deploy
+    output_file: ''                                          # don't write any file
+    expose_outputs: S3_BUCKET,CLOUDFRONT_DISTRIBUTION_ID     # only expose these as outputs
+
+- run: aws s3 sync build/ s3://${{ steps.deploy_env.outputs.S3_BUCKET }}/
+```
+
+- `expose_outputs: ''` (default) — no outputs.
+- `expose_outputs: 'KEY1,KEY2'` — only those keys become outputs.
+- `expose_outputs: '*'` — every resolved key becomes an output.
+- `output_file: ''` — skip writing the file (outputs-only mode).
+
+In `vault_path` mode the output names match the keys in the Vault secret; in `template_file` mode they match the LHS of each line.
+
 ## Behaviour notes
 
-- All resolved values are passed to `core.setSecret()` so they are masked in logs.
+- All resolved values are passed to `core.setSecret()` so they are masked in logs (including when used via outputs).
 - Multiple keys pointing at the same Vault path share a single read (cached in-memory per run).
 - If a vault key is missing, the action emits a warning and writes an empty value rather than failing — change this if you want hard-fail.

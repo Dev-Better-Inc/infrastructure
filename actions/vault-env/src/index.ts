@@ -106,6 +106,7 @@ async function main(): Promise<void> {
   const tplFile = core.getInput('template_file');
   const vaultPath = core.getInput('vault_path');
   const outFile = core.getInput('output_file');
+  const exposeRaw = core.getInput('expose_outputs').trim();
 
   if (tplFile && vaultPath) {
     throw new Error('template_file and vault_path are mutually exclusive');
@@ -126,6 +127,21 @@ async function main(): Promise<void> {
   const cache = new Map<string, Record<string, unknown>>();
   const lines: string[] = [];
 
+  const exposeAll = exposeRaw === '*';
+  const exposeSet = exposeAll
+    ? null
+    : new Set(exposeRaw.split(',').map((s) => s.trim()).filter(Boolean));
+
+  const shouldExpose = (key: string): boolean => exposeAll || (exposeSet?.has(key) ?? false);
+
+  const emit = (envKey: string, value: string): void => {
+    if (value) core.setSecret(value);
+    lines.push(`${envKey}=${value}`);
+    if (shouldExpose(envKey)) {
+      core.setOutput(envKey, value);
+    }
+  };
+
   if (tplFile) {
     const entries = parseTemplate(fs.readFileSync(tplFile, 'utf8'));
     for (const entry of entries) {
@@ -134,23 +150,24 @@ async function main(): Promise<void> {
       if (raw === undefined) {
         core.warning(`Vault path ${entry.mount}/${entry.path} has no key '${entry.vaultKey}' (for ${entry.key})`);
       }
-      const value = toEnvValue(raw);
-      if (value) core.setSecret(value);
-      lines.push(`${entry.key}=${value}`);
+      emit(entry.key, toEnvValue(raw));
     }
     core.info(`Wrote ${lines.length} keys to ${outFile} from ${tplFile} (auth: ${methodInput})`);
   } else {
     const { mount, path } = splitMountPath(vaultPath);
     const secrets = await readSecret(vault, cache, mount, path);
     for (const [key, raw] of Object.entries(secrets)) {
-      const value = toEnvValue(raw);
-      if (value) core.setSecret(value);
-      lines.push(`${key}=${value}`);
+      emit(key, toEnvValue(raw));
     }
-    core.info(`Wrote ${lines.length} keys to ${outFile} from vault_path=${vaultPath} (auth: ${methodInput})`);
+    core.info(`Resolved ${lines.length} keys from vault_path=${vaultPath} (auth: ${methodInput})`);
   }
 
-  fs.writeFileSync(outFile, lines.join('\n') + '\n');
+  if (outFile) {
+    fs.writeFileSync(outFile, lines.join('\n') + '\n');
+    core.info(`Wrote ${outFile}`);
+  } else {
+    core.info('output_file is empty — skipping file write (outputs-only mode)');
+  }
 }
 
 main().catch((err: unknown) => {
