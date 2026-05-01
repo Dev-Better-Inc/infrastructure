@@ -1,7 +1,7 @@
 name: Reusable — deploy CF/S3 SPA
 
-# Builds a Vite (or any) static SPA from the calling repo, populates .env from
-# Vault via .env.<env>.tpl, syncs to S3, invalidates the CloudFront distribution.
+# Builds a static SPA from the calling repo, populates .env from Vault
+# (via vault-env action), syncs to S3, invalidates CloudFront.
 
 on:
   workflow_call:
@@ -9,24 +9,53 @@ on:
       environment:
         type: string
         required: true
-        description: Logical env name; selects .env.<environment>.tpl by default.
       site_url:
         type: string
         required: true
+
+      # AWS
       aws_role_arn:
         type: string
         required: true
+      aws_region:
+        type: string
+        required: false
+        default: us-east-1
       s3_bucket:
         type: string
         required: true
       cloudfront_distribution_id:
         type: string
         required: true
+
+      # Vault
+      vault_url:
+        type: string
+        required: true
+      vault_auth_method:
+        type: string
+        required: false
+        default: jwt
+      vault_role:
+        type: string
+        required: false
+        default: ''
+      vault_audience:
+        type: string
+        required: false
+        default: https://github.com/Dev-Better-Inc
+
+      # Vault env source — pass either template_file OR vault_path.
       template_file:
         type: string
         required: false
         default: ''
-        description: Override .env tpl path. Empty = .env.<environment>.tpl.
+      vault_path:
+        type: string
+        required: false
+        default: ''
+
+      # Build
       build_command:
         type: string
         required: false
@@ -35,26 +64,29 @@ on:
         type: string
         required: false
         default: build
-      aws_region:
-        type: string
-        required: false
-        default: us-east-1
       node_version:
         type: string
         required: false
         default: lts/*
+      package_manager:
+        type: string
+        required: false
+        default: npm
+        description: npm | pnpm
+
+      # Pin the infrastructure repo ref used to load the vault-env action.
       infrastructure_ref:
         type: string
         required: false
         default: main
-        description: Ref of Dev-Better-Inc/infrastructure to use for the vault-env action.
+
     secrets:
-      vault_url:
-        required: true
       vault_username:
-        required: true
+        required: false
       vault_password:
-        required: true
+        required: false
+      vault_token:
+        required: false
 
 permissions:
   id-token: write
@@ -72,20 +104,34 @@ jobs:
           ref: ${{ inputs.infrastructure_ref }}
           path: .infrastructure
 
+      - if: inputs.package_manager == 'pnpm'
+        uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-          cache: npm
+          cache: ${{ inputs.package_manager }}
 
-      - run: npm ci
+      - name: Install
+        run: |
+          if [ "${{ inputs.package_manager }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
 
       - name: Resolve .env from Vault
         uses: ./.infrastructure/actions/vault-env
         with:
-          vault_url: ${{ secrets.vault_url }}
+          vault_url: ${{ inputs.vault_url }}
+          auth_method: ${{ inputs.vault_auth_method }}
+          vault_role: ${{ inputs.vault_role }}
+          vault_audience: ${{ inputs.vault_audience }}
           vault_username: ${{ secrets.vault_username }}
           vault_password: ${{ secrets.vault_password }}
-          template_file: ${{ inputs.template_file == '' && format('.env.{0}.tpl', inputs.environment) || inputs.template_file }}
+          vault_token: ${{ secrets.vault_token }}
+          template_file: ${{ inputs.template_file }}
+          vault_path: ${{ inputs.vault_path }}
 
       - name: Build
         run: ${{ inputs.build_command }}
