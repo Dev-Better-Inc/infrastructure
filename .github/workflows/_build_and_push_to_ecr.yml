@@ -1,0 +1,97 @@
+name: Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      ENVIRONMENT:
+        description: "GitHub Environment name (deployment marker for Slack notifications)"
+        required: false
+        default: ''
+        type: string
+      ECR_REPOSITORY:
+        description: "ECR repository name to push to (e.g. ti-front)"
+        required: true
+        type: string
+      VAULT_BUILD_PATH:
+        description: "Full Vault path holding build vars (e.g. projects/ti/front/.env.dev)"
+        required: true
+        type: string
+      IMAGE_TAGS:
+        description: "Comma-separated list of ECR image tags to push (e.g. dev or v1.2.3,prod-latest)"
+        required: true
+        type: string
+      BUILD_COMMAND:
+        description: "npm script to build with (e.g. dev, stage, build)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build and Push
+    runs-on: arm64
+    environment: ${{ inputs.ENVIRONMENT }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Pull build vars from Vault
+        uses: Dev-Better-Inc/infrastructure/actions/vault-env@main
+        with:
+          vault_url: ${{ secrets.VAULT_URL }}
+          vault_role: ${{ secrets.VAULT_ROLE }}
+          vault_path: ${{ inputs.VAULT_BUILD_PATH }}
+          output_file: .env
+          strict: true
+
+      - name: Pull AWS creds from Vault
+        id: aws
+        uses: Dev-Better-Inc/infrastructure/actions/vault-env@main
+        with:
+          vault_url: ${{ secrets.VAULT_URL }}
+          vault_role: ${{ secrets.VAULT_ROLE }}
+          vault_path: infrastructure/aws/ecr
+          output_file: ''
+          expose_outputs: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_REGION
+          strict: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ steps.aws.outputs.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ steps.aws.outputs.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ steps.aws.outputs.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compose image tags
+        id: tags
+        run: |
+          IFS=',' read -ra T <<< "${{ inputs.IMAGE_TAGS }}"
+          tags=""
+          for t in "${T[@]}"; do
+            tags+="${tags:+,}${{ steps.ecr.outputs.registry }}/${{ inputs.ECR_REPOSITORY }}:$t"
+          done
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: all
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            BUILD_COMMAND=${{ inputs.BUILD_COMMAND }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
